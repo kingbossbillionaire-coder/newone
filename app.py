@@ -3,9 +3,10 @@ import pandas as pd
 import numpy as np
 import requests
 import time
-from datetime import datetime
 import warnings
-warnings.filterwarnings('ignore')
+from datetime import datetime
+
+warnings.filterwarnings("ignore")
 
 # Streamlit config
 st.set_page_config(
@@ -43,7 +44,7 @@ class CryptoDataFetcher:
     BASE_URL = "https://api.coingecko.com/api/v3"
 
     @staticmethod
-    def get_top_cryptos(limit=10):
+    def get_top_cryptos(limit=5):
         url = f"{CryptoDataFetcher.BASE_URL}/coins/markets"
         params = {
             "vs_currency": "usd",
@@ -65,12 +66,13 @@ class CryptoDataFetcher:
         try:
             r = requests.get(url, params=params, timeout=10)
             data = r.json()
-            df = pd.DataFrame(data['prices'], columns=['timestamp', 'price'])
-            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-            df.set_index('timestamp', inplace=True)
+            if "prices" not in data:   # ✅ Safe check
+                return pd.DataFrame()
+            df = pd.DataFrame(data["prices"], columns=["timestamp", "price"])
+            df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
+            df.set_index("timestamp", inplace=True)
             return df
-        except Exception as e:
-            st.error(f"Error fetching history for {coin_id}: {e}")
+        except Exception:
             return pd.DataFrame()
 
 # --- Analyzer ---
@@ -78,13 +80,14 @@ class TradingAnalyzer:
     def analyze(self, coin, data):
         if data.empty:
             return {"symbol": coin["symbol"].upper(), "name": coin["name"], "status": "No data"}
-        prices = data['price']
+
+        prices = data["price"]
         rsi = TechnicalIndicators.rsi(prices).iloc[-1]
         macd, signal = TechnicalIndicators.macd(prices)
         macd_last, signal_last = macd.iloc[-1], signal.iloc[-1]
         support, resistance = TechnicalIndicators.support_resistance(prices)
 
-        # Simple bot logic
+        # Bot logic
         if rsi < 40 and macd_last > signal_last:
             bot = "🟢 Long"
         elif rsi > 60 and macd_last < signal_last:
@@ -95,13 +98,13 @@ class TradingAnalyzer:
         return {
             "name": coin["name"],
             "symbol": coin["symbol"].upper(),
-            "price": coin["current_price"],
+            "price": coin.get("current_price"),
             "change": coin.get("price_change_percentage_24h", 0),
-            "rsi": round(rsi, 2),
-            "macd": round(macd_last, 6),
-            "signal": round(signal_last, 6),
-            "support": round(support, 6),
-            "resistance": round(resistance, 6),
+            "rsi": round(rsi, 2) if not pd.isna(rsi) else "N/A",
+            "macd": round(macd_last, 6) if not pd.isna(macd_last) else "N/A",
+            "signal": round(signal_last, 6) if not pd.isna(signal_last) else "N/A",
+            "support": round(support, 6) if not pd.isna(support) else "N/A",
+            "resistance": round(resistance, 6) if not pd.isna(resistance) else "N/A",
             "bot": bot
         }
 
@@ -110,7 +113,7 @@ st.title("🚀 Crypto Trading Scanner")
 
 with st.sidebar:
     st.header("⚙️ Settings")
-    top_n = st.slider("Number of Cryptos", 5, 30, 10)
+    top_n = st.slider("Number of Cryptos", 5, 30, 5)  # Default 5
     days = st.selectbox("History (days)", [1, 3, 7], index=1)
     st.caption("Data from CoinGecko (free API)")
 
@@ -127,28 +130,33 @@ if crypto_data:
 
     for i, coin in enumerate(crypto_data, 1):
         status.text(f"Analyzing {coin['name']} ({i}/{len(crypto_data)}) ...")
-        history = fetcher.get_historical_data(coin['id'], days)
+
+        history = fetcher.get_historical_data(coin["id"], days)
+        if history.empty:
+            st.warning(f"⚠️ Skipping {coin['name']} (no valid price data)")
+            continue
+
         analysis = analyzer.analyze(coin, history)
         results.append(analysis)
 
-        # Update UI incrementally
+        # Render live
         with placeholder.container():
             for r in results:
                 st.markdown(f"""
-                **{r['symbol']} - {r['name']}**
-                - Price: ${r['price']:.2f} ({r['change']:.2f}% 24h)
-                - RSI: {r['rsi']}
-                - MACD: {r['macd']} vs Signal {r['signal']}
-                - Support: ${r['support']}
-                - Resistance: ${r['resistance']}
-                - Bot Suggestion: {r['bot']}
+                **{r.get('symbol', '')} - {r.get('name', '')}**
+                - Price: ${r.get('price', 0):.2f} ({r.get('change',0):.2f}% 24h)
+                - RSI: {r.get('rsi','N/A')}
+                - MACD: {r.get('macd','N/A')} vs Signal {r.get('signal','N/A')}
+                - Support: ${r.get('support','N/A')}
+                - Resistance: ${r.get('resistance','N/A')}
+                - Bot Suggestion: {r.get('bot','N/A')}
                 ---
                 """)
 
         progress.progress(i / len(crypto_data))
-        time.sleep(0.3)
+        time.sleep(0.2)
 
     status.empty()
     progress.empty()
 else:
-    st.error("⚠️ Could not fetch crypto data. Try again later.")
+    st.error("⚠️ Could not fetch crypto data. Please try again later.")
