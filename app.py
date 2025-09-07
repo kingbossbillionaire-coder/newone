@@ -79,7 +79,18 @@ class CryptoDataFetcher:
 class TradingAnalyzer:
     def analyze(self, coin, data):
         if data.empty:
-            return {"symbol": coin["symbol"].upper(), "name": coin["name"], "status": "No data"}
+            return {
+                "symbol": coin["symbol"].upper(),
+                "name": coin["name"],
+                "price": None,   # ✅ prevents KeyError
+                "change": coin.get("price_change_percentage_24h", 0),
+                "rsi": "N/A",
+                "macd": "N/A",
+                "signal": "N/A",
+                "support": "N/A",
+                "resistance": "N/A",
+                "bot": "No Data"
+            }
 
         prices = data["price"]
         rsi = TechnicalIndicators.rsi(prices).iloc[-1]
@@ -132,19 +143,22 @@ if crypto_data:
         status.text(f"Analyzing {coin['name']} ({i}/{len(crypto_data)}) ...")
 
         history = fetcher.get_historical_data(coin["id"], days)
-        if history.empty:
-            st.warning(f"⚠️ Skipping {coin['name']} (no valid price data)")
-            continue
-
         analysis = analyzer.analyze(coin, history)
         results.append(analysis)
 
         # Render live
         with placeholder.container():
             for r in results:
+                price = r.get("price")
+                change = r.get("change", 0)
+
+                if price is None:  # ✅ Safe print
+                    st.warning(f"⚠️ Skipping {r.get('symbol','')} - no price data")
+                    continue
+
                 st.markdown(f"""
-                **{r.get('symbol', '')} - {r.get('name', '')}**
-                - Price: ${r.get('price', 0):.2f} ({r.get('change',0):.2f}% 24h)
+                **{r.get('symbol','')} - {r.get('name','')}**
+                - Price: ${price:.2f} ({change:.2f}% 24h)
                 - RSI: {r.get('rsi','N/A')}
                 - MACD: {r.get('macd','N/A')} vs Signal {r.get('signal','N/A')}
                 - Support: ${r.get('support','N/A')}
