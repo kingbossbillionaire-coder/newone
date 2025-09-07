@@ -80,9 +80,9 @@ class TradingAnalyzer:
     def analyze(self, coin, data):
         if data.empty:
             return {
-                "symbol": coin["symbol"].upper(),
-                "name": coin["name"],
-                "price": None,   # ✅ prevents KeyError
+                "symbol": coin.get("symbol","").upper(),
+                "name": coin.get("name",""),
+                "price": None,    # ✅ Always exists
                 "change": coin.get("price_change_percentage_24h", 0),
                 "rsi": "N/A",
                 "macd": "N/A",
@@ -107,9 +107,9 @@ class TradingAnalyzer:
             bot = "🟡 Range"
 
         return {
-            "name": coin["name"],
-            "symbol": coin["symbol"].upper(),
-            "price": coin.get("current_price"),
+            "name": coin.get("name",""),
+            "symbol": coin.get("symbol","").upper(),
+            "price": coin.get("current_price", None),
             "change": coin.get("price_change_percentage_24h", 0),
             "rsi": round(rsi, 2) if not pd.isna(rsi) else "N/A",
             "macd": round(macd_last, 6) if not pd.isna(macd_last) else "N/A",
@@ -140,29 +140,29 @@ if crypto_data:
     status = st.empty()
 
     for i, coin in enumerate(crypto_data, 1):
-        status.text(f"Analyzing {coin['name']} ({i}/{len(crypto_data)}) ...")
+        status.text(f"Analyzing {coin.get('name','Unknown')} ({i}/{len(crypto_data)}) ...")
 
-        history = fetcher.get_historical_data(coin["id"], days)
+        history = fetcher.get_historical_data(coin.get("id",""), days)
         analysis = analyzer.analyze(coin, history)
         results.append(analysis)
 
-        # Render live
+        # --- Safe rendering ---
         with placeholder.container():
             for r in results:
-                price = r.get("price")
+                price = r.get("price", None)
                 change = r.get("change", 0)
 
-                if price is None:  # ✅ Safe print
-                    st.warning(f"⚠️ Skipping {r.get('symbol','')} - no price data")
+                if price is None:
+                    st.warning(f"⚠️ Skipping {r.get('symbol','???')} ({r.get('name','')}) - no price data")
                     continue
 
                 st.markdown(f"""
                 **{r.get('symbol','')} - {r.get('name','')}**
-                - Price: ${price:.2f} ({change:.2f}% 24h)
+                - Price: ${float(price):.2f} ({float(change):.2f}% 24h)
                 - RSI: {r.get('rsi','N/A')}
                 - MACD: {r.get('macd','N/A')} vs Signal {r.get('signal','N/A')}
-                - Support: ${r.get('support','N/A')}
-                - Resistance: ${r.get('resistance','N/A')}
+                - Support: {r.get('support','N/A')}
+                - Resistance: {r.get('resistance','N/A')}
                 - Bot Suggestion: {r.get('bot','N/A')}
                 ---
                 """)
